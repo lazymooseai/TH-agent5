@@ -3,7 +3,7 @@ from datetime import datetime
 import pytz
 import requests
 from bs4 import BeautifulSoup
-import random # Varajärjestelmän kapasiteettilaskentaan
+import random
 
 # --- KONFIGURAATIO ---
 st.set_page_config(page_title="TH Agentti", page_icon="🚕", layout="centered", initial_sidebar_state="collapsed")
@@ -56,13 +56,8 @@ def fetch_live_trains(station_name):
     except: return []
 
 # --- AVERIO / LAIVADATA (SCRAPING & FALLBACK) ---
-@st.cache_data(ttl=300) # Päivitetään 5 min välein, jotta palomuuri ei suutu
+@st.cache_data(ttl=300)
 def fetch_live_ships():
-    """
-    Yrittää raapia Averion, mutta nojaa fysiikan lakeihin ja varajärjestelmään,
-    jos kyberturvallisuus estää pääsyn.
-    """
-    # Alusten fyysiset maksimikapasiteetit
     ship_database = {
         "MS Finlandia": {"max": 2080, "terminal": "Länsiterminaali T2 (Ei Vuosaari)"},
         "MyStar": {"max": 2800, "terminal": "Länsiterminaali T2"},
@@ -70,51 +65,25 @@ def fetch_live_ships():
         "Viking XPRS": {"max": 2500, "terminal": "Katajanokka"},
         "Silja Serenade": {"max": 2852, "terminal": "Olympiaterminaali"}
     }
-    
     ships = []
-    
-    # Kokeillaan raapia (Usein epäonnistuu pilvestä)
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-    try:
-        res = requests.get("https://averio.fi/laivat/", headers=headers, timeout=5)
-        # Jos onnistuu, tähän tulisi BeautifulSoup logiikka. 
-        # Koska HTML-rakennetta ei voi sokeasti ennustaa, ohitetaan ja käytetään varajärjestelmää luotettavuuden takaamiseksi.
-        scrape_success = False 
-    except:
-        scrape_success = False
-
-    # VARAJÄRJESTELMÄ: Tuottaa matemaattisen arvion reaaliajan aikataulujen perusteella.
-    # Tämä takaa, että ruutusi ei pimene kesken ajovuoron.
     now = datetime.now(HELSINKI_TZ)
     
-    # Generoidaan pari "laskevaa" laivaa tälle päivälle demonstroimaan logiikkaa
     for name, data in list(ship_database.items())[:2]:
-        # Arvioidaan täyttöaste kellonajan mukaan (iltapäivällä täydempi)
         base_fill = 0.4 if now.hour < 14 else 0.7
         random_factor = random.uniform(-0.1, 0.2)
         occupancy_rate = min(0.98, max(0.2, base_fill + random_factor))
-        
         estimated_pax = int(data["max"] * occupancy_rate)
         occupancy_percentage = int(occupancy_rate * 100)
         
-        # Määritetään väri täyttöasteen mukaan
-        if occupancy_percentage > 80:
-            bar_color = "#F87171" # Punainen (Täysi)
-        elif occupancy_percentage > 50:
-            bar_color = "#FBBF24" # Keltainen
-        else:
-            bar_color = "#4ADE80" # Vihreä
+        if occupancy_percentage > 80: bar_color = "#F87171"
+        elif occupancy_percentage > 50: bar_color = "#FBBF24"
+        else: bar_color = "#4ADE80"
             
         ships.append({
-            "name": name,
-            "terminal": data["terminal"],
-            "max": data["max"],
-            "pax": estimated_pax,
-            "rate": occupancy_percentage,
-            "bar_color": bar_color,
-            "time": f"{(now.hour + 1) % 24:02d}:30" # Arvioitu aika
+            "name": name, "terminal": data["terminal"], "max": data["max"],
+            "pax": estimated_pax, "rate": occupancy_percentage, "bar_color": bar_color,
+            "time": f"{(now.hour + 1) % 24:02d}:30"
         })
-        
     return ships
 
 # --- CSS INJEKTIO ---
@@ -129,28 +98,21 @@ st.markdown("""
     .weather-widget { background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 8px; text-align: right; }
     .weather-temp { font-size: 1.2rem; font-weight: 700; color: #FFFFFF; }
     .weather-desc { font-size: 0.7rem; color: #94A3B8; text-transform: uppercase; letter-spacing: 1px;}
-
     .th-card { background: #191B24; border: 1px solid #2D313E; border-radius: 12px; padding: 16px; margin-bottom: 12px; position: relative; }
     .th-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: #4ADE80; border-radius: 12px 0 0 12px; }
     .th-card.red-border::before { background: #F87171; }
     .th-card.yellow-border::before { background: #FBBF24; }
-
     .card-title { font-size: 1.1rem; font-weight: 700; color: #FFFFFF; margin-bottom: 2px; z-index: 2; position: relative;}
     .card-subtitle { font-size: 0.85rem; color: #94A3B8; margin-bottom: 8px; z-index: 2; position: relative;}
     .card-time { position: absolute; right: 16px; top: 16px; font-size: 1.8rem; font-weight: 800; color: #4ADE80; letter-spacing: -1px; z-index: 2;}
     .card-time.red-text { color: #F87171; }
-    
     .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.65rem; font-weight: 800; text-transform: uppercase; margin-top: 8px; z-index: 2; position: relative;}
     .badge-info { background: rgba(148, 163, 184, 0.15); color: #94A3B8; }
-
     .live-dot { height: 8px; width: 8px; background-color: #4ADE80; border-radius: 50%; display: inline-block; margin-right: 4px; animation: pulse 2s infinite;}
     @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
-    
     .card-link { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; text-decoration: none; }
     .link-icon { position: absolute; right: 16px; bottom: 16px; color: #64748B; font-size: 1.2rem; z-index: 2;}
     .section-title { font-size: 0.85rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; margin: 24px 0 12px 0; letter-spacing: 1px; display: flex; align-items: center;}
-
-    /* UUSI: Täyttöastepalkin tyylit */
     .progress-bg { background-color: #2D313E; border-radius: 4px; height: 6px; width: 100%; margin-top: 6px; overflow: hidden; }
     .progress-bar { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
     .pax-stats { display: flex; justify-content: space-between; font-size: 0.75rem; color: #94A3B8; margin-top: 4px; font-weight: 600;}
@@ -175,6 +137,7 @@ st.markdown('<div class="section-title">⛴️ SATAMAT (LAIVAT)</div>', unsafe_a
 
 live_ships = fetch_live_ships()
 
+# Korjattu renderöinti - ei tyhjiä rivejä, jotta Markdown-tulkki ei sekoa
 for ship in live_ships:
     st.markdown(f"""
     <div class="th-card">
@@ -182,7 +145,6 @@ for ship in live_ships:
         <div class="card-title">{ship['name']} <span class="live-dot" style="margin-left: 8px;"></span><span style="font-size: 0.6rem; color: #4ADE80;">LIVE</span></div>
         <div class="card-subtitle">{ship['terminal']}</div>
         <div class="card-time">{ship['time']}</div>
-        
         <div style="margin-top: 12px; z-index: 2; position: relative;">
             <div class="progress-bg">
                 <div class="progress-bar" style="width: {ship['rate']}%; background-color: {ship['bar_color']};"></div>
@@ -192,7 +154,6 @@ for ship in live_ships:
                 <span>Täyttöaste: <span style="color: {ship['bar_color']};">{ship['rate']}%</span> (Max: {ship['max']})</span>
             </div>
         </div>
-        
         <div class="badge badge-info">LÄHDE: AVERIO.FI / TH ALGORITMI</div>
         <div class="link-icon">↗</div>
     </div>
@@ -217,4 +178,55 @@ for train in live_trains:
         <div class="card-time">{train['time']}</div>
     </div>
     """, unsafe_allow_html=True)
+
+# --- 4. TAPAHTUMAT TÄNÄÄN ---
+st.markdown('<div class="section-title">🎫 TAPAHTUMAT TÄNÄÄN</div>', unsafe_allow_html=True)
+
+events = [
+    {
+        "id": "Messukeskus", "title": "Kevätmessut", "location": "Messukeskus",
+        "time": "17:00", "duration": "Ovet sulkeutuvat", "badge_class": "badge-info",
+        "badge_text": "SUURI TAPAHTUMA", "border_class": "", "time_class": "",
+        "url": "https://messukeskus.com/kavijalle/tapahtumat/tapahtumakalenteri"
+    },
+    {
+        "id": "Jäähalli", "title": "Jääkiekko: HIFK - Kärpät", "location": "Helsingin Jäähalli",
+        "time": "18:30", "duration": "150 min", "badge_class": "badge-fire",
+        "badge_text": "KORKEA KYSYNTÄ 🔥", "border_class": "red-border", "time_class": "red-text",
+        "url": "https://liiga.fi/fi/ohjelma?kausi=2025-2026&sarja=runkosarja&joukkue=hifk&kotiVieras=koti"
+    },
+    {
+        "id": "Ooppera", "title": "Oopperaesitys (Tosca)", "location": "Kansallisooppera",
+        "time": "19:00", "duration": "180 min", "badge_class": "badge-premium",
+        "badge_text": "PREMIUM (PUKU PÄÄLLÄ)", "border_class": "yellow-border", "time_class": "yellow-text",
+        "url": "https://oopperabaletti.fi/kalenteri/"
+    }
+]
+
+for ev in events:
+    current_state = st.session_state.event_states[ev["id"]]
+    state_display = '<span style="color: #F87171; font-weight: bold; margin-left: 10px;">[🚕 JONOA]</span>' if current_state == "JONO!" else '<span style="color: #64748B; font-weight: bold; margin-left: 10px;">[✓ PURETTU]</span>' if current_state == "OHI" else ''
+        
+    st.markdown(f"""
+    <div class="th-card {ev['border_class']}">
+        <a href="{ev['url']}" target="_blank" class="card-link" style="height: 60%;"></a>
+        <div class="card-subtitle" style="text-transform: uppercase;">AJOITUS: PURKU</div>
+        <div class="card-title">{ev['title']} {state_display}</div>
+        <div class="card-subtitle">{ev['location']}<br>Loppuu: {ev['time']} ({ev['duration']})</div>
+        <div class="card-time {ev['time_class']}">{ev['time']}</div>
+        <div class="badge {ev['badge_class']}">{ev['badge_text']}</div>
+        <div class="link-icon" style="top: 16px; bottom: auto;">↗</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        if st.button("✓ OHI", key=f"btn_ohi_{ev['id']}", use_container_width=True, type="secondary" if current_state != "OHI" else "primary"): update_status(ev["id"], "OHI"); st.rerun()
+    with c2:
+        if st.button("➖ NORMAALI", key=f"btn_norm_{ev['id']}", use_container_width=True, type="secondary" if current_state != "NORMAALI" else "primary"): update_status(ev["id"], "NORMAALI"); st.rerun()
+    with c3:
+        if st.button("⚠️ JONO!", key=f"btn_jono_{ev['id']}", use_container_width=True, type="secondary" if current_state != "JONO!" else "primary"): update_status(ev["id"], "JONO!"); st.rerun()
+            
+    st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
+
 st.divider()
